@@ -21,6 +21,10 @@
     "typescript": "~3.9.7"
   },
   "dependencies": {
+    "@aws-cdk/aws-glue": "^1.165.0",
+    "@aws-cdk/aws-glue-alpha": "^2.33.0-alpha.0",
+    "@aws-cdk/aws-s3": "^1.165.0",
+    "@aws-cdk/aws-s3-assets": "^1.165.0",
     "aws-cdk-lib": "2.33.0",
     "constructs": "^10.0.0",
     "source-map-support": "^0.5.21"
