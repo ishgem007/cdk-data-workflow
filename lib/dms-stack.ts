@@ -1,3 +1,4 @@
+// import * as cdk from '@aws-cdk/core';
 import * as cdk from 'aws-cdk-lib';
 import { App, Stack, StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
@@ -10,12 +11,14 @@ import {
   PolicyStatement, 
   Effect 
 } from 'aws-cdk-lib/aws-iam';
+import * as iam from 'aws-cdk-lib/aws-iam';
+// import * as iam from 'aws-cdk-lib/aws-iam';
 import { aws_ec2 as ec2  } from  'aws-cdk-lib';
 import { aws_s3 as s3 } from 'aws-cdk-lib';
 import { aws_dynamodb as dynamodb } from  'aws-cdk-lib';
 import { Vpc as vpc } from 'aws-cdk-lib/aws-ec2';
-
-
+import * as glue from 'aws-cdk-lib/aws-glue';
+import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 
 
 export class DmsStack extends Stack {
@@ -237,10 +240,6 @@ export class DmsStack extends Stack {
 
     dmsVPCServiceRole.addManagedPolicy(dmsVpcManagementRolePolicy);
 
-
-
-
-
     
     // // Create a subnet group that allows DMS to access your data
     const subnet = new dms.CfnReplicationSubnetGroup(this, 'SubnetGroup', {
@@ -270,7 +269,7 @@ export class DmsStack extends Stack {
     // Create endpoints for your data, see https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dms-endpoint.html
 const rdsSource = new dms.CfnEndpoint(this, 'RDS-Source', {
   endpointIdentifier: 'rds-source',
-  endpointType: 'source', //dbInstance.dbInstanceEndpointAddress,
+  endpointType: 'source', 
   engineName: 'postgres',
 
   serverName: dbInstance.dbInstanceEndpointAddress,
@@ -292,6 +291,7 @@ const s3RawDatatarget = new dms.CfnEndpoint(this, 'S3RawTarget', {
 });
 
 
+  //  grant permissions on table
   dynamotable.grantReadData(dmsVPCServiceRole);
 
 const dynamoRawDatatarget = new dms.CfnEndpoint(this, 'Dynamo-Target', {
@@ -301,7 +301,6 @@ const dynamoRawDatatarget = new dms.CfnEndpoint(this, 'Dynamo-Target', {
   dynamoDbSettings: {
     serviceAccessRoleArn: dmsVPCServiceRole.roleArn,
   },
-
 
 });
 
@@ -336,7 +335,7 @@ const DynamodbReplicateTask = new dms.CfnReplicationTask(this, 'DynamoDmsReplica
 
   migrationType: 'full-load-and-cdc', // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dms-replicationtask.html#cfn-dms-replicationtask-migrationtype
   sourceEndpointArn: rdsSource.ref,
-  targetEndpointArn: dynamoRawDatatarget.ref, 
+  targetEndpointArn: dynamoRawDatatarget.ref,
   tableMappings: JSON.stringify({
     "rules": [{
       "rule-type": "selection",
@@ -351,6 +350,90 @@ const DynamodbReplicateTask = new dms.CfnReplicationTask(this, 'DynamoDmsReplica
   })
 })
 
+
+ //Tranformations
+ // use the Bucket construct
+ const s3DataLake = new s3.Bucket(this, 'data-lake-bucket', {
+  removalPolicy: cdk.RemovalPolicy.DESTROY,
+});
+
+ //Role
+ const roleGlueJob = new iam.Role(this, 'roleGlueJob', {
+  assumedBy: new iam.ServicePrincipal('glue.amazonaws.com'),
+});
+roleGlueJob.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSGlueServiceRole'))
+
+roleGlueJob.addToPolicy(
+  new iam.PolicyStatement({
+    effect: iam.Effect.ALLOW,
+    resources: [s3DataLake.bucketArn, `${s3DataLake.bucketArn}/*`],
+    actions: [
+      's3:AbortMultipartUpload',
+      's3:GetBucketLocation',
+      's3:GetObject',
+      's3:ListBucket',
+      's3:ListBucketMultipartUploads',
+      's3:PutObject',
+    ],
+  })
+);
+
+
+  
+
+    //Setup Glue Database for initial crawl of data
+    const rawDataDB = new glue.CfnDatabase(this, "rawDataDatabase",{
+      catalogId: this.account,
+      databaseInput:{
+      name: "rawdatadb"
+      }
+  })
+
+  //Setup crawler on rawData data
+  const rawDataCrawlers = new glue.CfnCrawler(this, "rawDataCrawlers", {
+    targets: {
+      s3Targets: [{path: "s3://" + s3RawData.bucketName}]
+    },
+    role: roleGlueJob.roleArn,
+    databaseName: "rawdatadb"
+    
+  })
+
+
+  //Create glue job to transform data and store in new lake
+  let job = new glue.CfnJob(this, "DatatransformedJob",{
+    role: roleGlueJob.roleArn,
+    glueVersion: "2.0",
+    command:{
+      name: "glueetl",
+      pythonVersion: "3",
+      scriptLocation: "s3://"+ s3RawData.bucketName +"/datatranformed_spark.py"
+    },
+    defaultArguments:{
+      "--glue_source_database": "rawdatadb",
+      // "--glue_source_table": "dmsstackk_mylakerawData6df26456_agqxvt1ngc70",
+      "--glue_temp_storage": "s3://"+ s3RawData.bucketName,
+      "--glue_Datatransformed_output_s3_path": "s3://" + s3DataLake.bucketName
+    }
+  })
+
+  //Setup Glue DB to catalog the new transformed data
+  const transformedDB = new glue.CfnDatabase(this, "transformedDB",{
+    catalogId: this.account,
+    databaseInput:{
+    name: "transformeddb"
+    }
+  })
+
+  //Setup crawler to to crawl and catalog the transformed data
+  const transformedDataCrawlers = new glue.CfnCrawler(this, "transformedDataCrawlers", {
+    targets: {
+      s3Targets: [{path: "s3://" + s3DataLake.bucketName}]
+    },
+    role: roleGlueJob.roleArn,
+    databaseName: "transformeddatadb"
+    
+  })
 
   }
 }
