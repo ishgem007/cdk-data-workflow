@@ -32,7 +32,7 @@ export class CdkTut2Stack extends Stack {
    
    
 
-       // use the Bucket construct
+    // use the Bucket construct
     const bucket2 = new s3.Bucket(this, 'data-bucket', {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
