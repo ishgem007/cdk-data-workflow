@@ -435,5 +435,41 @@ roleGlueJob.addToPolicy(
     
   })
 
+
+  //Glue job to persists the state of data load  
+  const cfnJob = new glue.CfnJob(this, 'DynamoDBDataState', {
+    role: roleGlueJob.roleArn,
+    command: {
+      name: 'DynamoDBDataState',
+      pythonVersion: 'pythonVersion',
+      scriptLocation: "s3://"+ s3RawData.bucketName +"/DynamoDBDataStateScript.py"
+    },
+      
+    // the properties below are optional
+    allocatedCapacity: 123,
+    connections: {
+      connections: ['dynamodb'],
+    },
+    // defaultArguments: defaultArguments,
+    description: 'description',
+    executionProperty: {
+      maxConcurrentRuns: 123,
+    },
+    glueVersion: 'glueVersion',
+    logUri: 'logUri',
+    maxCapacity: 123,
+    maxRetries: 123,
+    name: 'name',
+    notificationProperty: {
+      notifyDelayAfter: 123,
+    },
+    numberOfWorkers: 123,
+    securityConfiguration: 'securityConfiguration',
+    timeout: 123,
+    workerType: 'workerType',
+  });
+  
+ 
+
   }
 }
