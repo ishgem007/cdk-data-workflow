@@ -329,26 +329,6 @@ const s3ReplicateTask = new dms.CfnReplicationTask(this, 'S3DmsReplicationTask',
   })
 })
 
-// Define the replication task for dynamoDB
-const DynamodbReplicateTask = new dms.CfnReplicationTask(this, 'DynamoDmsReplicationTask', {
-  replicationInstanceArn: dmsInstance.ref,
-
-  migrationType: 'full-load-and-cdc', // https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-dms-replicationtask.html#cfn-dms-replicationtask-migrationtype
-  sourceEndpointArn: rdsSource.ref,
-  targetEndpointArn: dynamoRawDatatarget.ref,
-  tableMappings: JSON.stringify({
-    "rules": [{
-      "rule-type": "selection",
-      "rule-id": "1",
-      "rule-name": "1",
-      "object-locator": {
-        "schema-name": "%",
-        "table-name": "%"
-      },
-      "rule-action": "include"
-    }]
-  })
-})
 
 
  //Tranformations
